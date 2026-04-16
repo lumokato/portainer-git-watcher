@@ -89,6 +89,14 @@ Environment variables:
 - any optional filters you want
 
 This service does not expose ports and does not need Traefik.
+It uses `network_mode: host` by default so it can reach the host's Tailscale network directly.
+
+## Why host network mode
+
+In many setups, the Portainer API is only reachable through Tailscale or another host-level private network.
+Regular Docker bridge networking may resolve the Tailscale IP but still fail to connect to the host's `tailscale0`.
+
+Running this watcher with `network_mode: host` avoids that routing problem and is usually the simplest option for an internal automation worker.
 
 ## Recommended first setup
 

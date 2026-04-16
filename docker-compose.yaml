@@ -4,6 +4,7 @@ services:
     image: portainer-git-watcher:latest
     container_name: portainer-git-watcher
     restart: unless-stopped
+    network_mode: host
     environment:
       PORTAINER_URL: ${PORTAINER_URL}
       PORTAINER_API_KEY: ${PORTAINER_API_KEY}
