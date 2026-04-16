@@ -52,6 +52,7 @@ Behavior:
 - `POLL_INTERVAL_SECONDS`
 - `SKIP_INITIAL_REDEPLOY`
   If `true`, the first observed commit is recorded without redeploying.
+  Default is `false`, so the watcher will correct Git stacks to the latest commit on first discovery.
 - `REDEPLOY_PULL_IMAGE`
 - `REDEPLOY_PRUNE`
 - `LOG_LEVEL`
@@ -98,14 +99,13 @@ Regular Docker bridge networking may resolve the Tailscale IP but still fail to 
 
 Running this watcher with `network_mode: host` avoids that routing problem and is usually the simplest option for an internal automation worker.
 
-## Recommended first setup
+## Default behavior
 
-To avoid accidental first-run redeploys:
+This watcher is designed for the "always converge to latest" GitOps workflow.
 
-- keep `SKIP_INITIAL_REDEPLOY=true`
-- start the watcher once
-- let it record current commit SHAs into the state volume
-- then future commit changes will trigger redeploys
+- By default, `SKIP_INITIAL_REDEPLOY=false`
+- If a Git stack is behind the latest repository commit, the watcher will redeploy it on first discovery
+- If you need a safer observation-only bootstrap, set `SKIP_INITIAL_REDEPLOY=true`
 
 ## Notes
 

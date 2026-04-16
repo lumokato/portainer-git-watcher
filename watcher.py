@@ -81,7 +81,7 @@ class Settings:
             include_stacks=env_list("STACK_INCLUDE"),
             exclude_stacks=env_list("STACK_EXCLUDE"),
             include_branches=env_list("BRANCH_INCLUDE"),
-            skip_initial_redeploy=env_bool("SKIP_INITIAL_REDEPLOY", True),
+            skip_initial_redeploy=env_bool("SKIP_INITIAL_REDEPLOY", False),
             pull_image=env_bool("REDEPLOY_PULL_IMAGE", True),
             prune=env_bool("REDEPLOY_PRUNE", False),
             github_token=os.environ.get("GITHUB_TOKEN") or None,
