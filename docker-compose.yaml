@@ -1,0 +1,27 @@
+services:
+  portainer-git-watcher:
+    build: .
+    image: portainer-git-watcher:latest
+    container_name: portainer-git-watcher
+    restart: unless-stopped
+    environment:
+      PORTAINER_URL: ${PORTAINER_URL}
+      PORTAINER_API_KEY: ${PORTAINER_API_KEY}
+      PORTAINER_ENDPOINT_IDS: ${PORTAINER_ENDPOINT_IDS:-}
+      STACK_INCLUDE: ${STACK_INCLUDE:-}
+      STACK_EXCLUDE: ${STACK_EXCLUDE:-}
+      BRANCH_INCLUDE: ${BRANCH_INCLUDE:-main}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-180}
+      SKIP_INITIAL_REDEPLOY: ${SKIP_INITIAL_REDEPLOY:-true}
+      REDEPLOY_PULL_IMAGE: ${REDEPLOY_PULL_IMAGE:-true}
+      REDEPLOY_PRUNE: ${REDEPLOY_PRUNE:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATA_DIR: /app/data
+    volumes:
+      - watcher_state:/app/data
+
+volumes:
+  watcher_state:
+    driver: local
