@@ -62,6 +62,7 @@ class Settings:
     prune: bool
     github_token: str | None
     github_api_url: str
+    self_stack_names: list[str]
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -86,6 +87,7 @@ class Settings:
             prune=env_bool("REDEPLOY_PRUNE", False),
             github_token=os.environ.get("GITHUB_TOKEN") or None,
             github_api_url=os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/"),
+            self_stack_names=env_list("SELF_STACK_NAMES") or ["app-portainer-git-watcher"],
         )
 
 
@@ -189,6 +191,8 @@ def should_watch_stack(stack: dict[str, Any], settings: Settings) -> bool:
         return False
 
     name = stack.get("Name", "")
+    if name in settings.self_stack_names:
+        return False
     if settings.include_stacks and name not in settings.include_stacks:
         return False
     if settings.exclude_stacks and name in settings.exclude_stacks:
@@ -208,6 +212,11 @@ def stack_repo_url(stack: dict[str, Any]) -> str:
 
 def stack_key(stack: dict[str, Any]) -> str:
     return str(stack["Id"])
+
+
+def stack_config_hash(stack: dict[str, Any]) -> str:
+    git_config = stack["GitConfig"]
+    return git_config.get("ConfigHash") or git_config.get("configHash") or ""
 
 
 def process_once(settings: Settings, portainer: PortainerClient, github: GithubClient, state: dict[str, Any]) -> bool:
@@ -231,28 +240,37 @@ def process_once(settings: Settings, portainer: PortainerClient, github: GithubC
             logging.exception("Failed to fetch latest commit for stack %s: %s", name, exc)
             continue
 
+        current_config_hash = stack_config_hash(stack)
         previous = stacks_state.get(key, {})
-        previous_sha = previous.get("last_sha")
 
-        if previous_sha == latest_sha:
-            logging.debug("No update for stack %s (%s)", name, latest_sha[:7])
+        if current_config_hash == latest_sha:
+            logging.debug("Stack %s already converged (%s)", name, latest_sha[:7])
+            stacks_state[key] = {
+                "name": name,
+                "repo_url": repo_url,
+                "branch": branch,
+                "last_sha": latest_sha,
+                "last_seen_config_hash": current_config_hash,
+            }
+            changed = True
             continue
 
-        if previous_sha is None and settings.skip_initial_redeploy:
+        if not current_config_hash and previous.get("last_sha") is None and settings.skip_initial_redeploy:
             logging.info("Initial observation for stack %s -> %s, recording without redeploy", name, latest_sha[:7])
             stacks_state[key] = {
                 "name": name,
                 "repo_url": repo_url,
                 "branch": branch,
                 "last_sha": latest_sha,
+                "last_seen_config_hash": current_config_hash,
             }
             changed = True
             continue
 
         logging.info(
-            "Repository update detected for stack %s: %s -> %s",
+            "Repository update detected for stack %s: config %s -> repo %s",
             name,
-            previous_sha[:7] if previous_sha else "<none>",
+            current_config_hash[:7] if current_config_hash else "<none>",
             latest_sha[:7],
         )
         try:
@@ -268,9 +286,18 @@ def process_once(settings: Settings, portainer: PortainerClient, github: GithubC
                 "repo_url": repo_url,
                 "branch": branch,
                 "last_sha": latest_sha,
+                "last_seen_config_hash": latest_sha,
             }
             changed = True
         except Exception as exc:  # noqa: BLE001
+            stacks_state[key] = {
+                "name": name,
+                "repo_url": repo_url,
+                "branch": branch,
+                "last_sha": latest_sha,
+                "last_seen_config_hash": current_config_hash,
+            }
+            changed = True
             logging.exception("Failed to redeploy stack %s: %s", name, exc)
 
     return changed

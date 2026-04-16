@@ -44,6 +44,8 @@ Optional filters:
 - `STACK_INCLUDE`
   Example: `app-autopcr,app-obsidian-docs`
 - `STACK_EXCLUDE`
+- `SELF_STACK_NAMES`
+  Defaults to `app-portainer-git-watcher` so the watcher does not try to redeploy itself.
 - `BRANCH_INCLUDE`
   Example: `main`
 
@@ -104,7 +106,8 @@ Running this watcher with `network_mode: host` avoids that routing problem and i
 This watcher is designed for the "always converge to latest" GitOps workflow.
 
 - By default, `SKIP_INITIAL_REDEPLOY=false`
-- If a Git stack is behind the latest repository commit, the watcher will redeploy it on first discovery
+- If a Git stack's `GitConfig.ConfigHash` is behind the latest repository commit, the watcher will redeploy it
+- It uses Portainer's current `ConfigHash` as the source of truth, not only the local state file
 - If you need a safer observation-only bootstrap, set `SKIP_INITIAL_REDEPLOY=true`
 
 ## Notes

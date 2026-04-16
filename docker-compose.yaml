@@ -11,6 +11,7 @@ services:
       PORTAINER_ENDPOINT_IDS: ${PORTAINER_ENDPOINT_IDS:-}
       STACK_INCLUDE: ${STACK_INCLUDE:-}
       STACK_EXCLUDE: ${STACK_EXCLUDE:-}
+      SELF_STACK_NAMES: ${SELF_STACK_NAMES:-app-portainer-git-watcher}
       BRANCH_INCLUDE: ${BRANCH_INCLUDE:-main}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
