@@ -13,7 +13,6 @@ and triggers `git redeploy` when updates are found.
 - Optionally filters by endpoint, stack name, and branch
 - Checks the latest GitHub commit for each tracked repository
 - Calls the Portainer `git/redeploy` API when a new commit is detected
-- Persists the last seen commit SHA in a local state file
 
 ## Current assumptions
 
@@ -58,6 +57,9 @@ Behavior:
 - `REDEPLOY_PULL_IMAGE`
 - `REDEPLOY_PRUNE`
 - `LOG_LEVEL`
+
+For `build: .` stacks, keep `REDEPLOY_PULL_IMAGE=false` so Portainer doesn't fail on a
+pre-deploy `compose pull` for images that only exist locally.
 
 GitHub:
 
@@ -107,7 +109,8 @@ This watcher is designed for the "always converge to latest" GitOps workflow.
 
 - By default, `SKIP_INITIAL_REDEPLOY=false`
 - If a Git stack's `GitConfig.ConfigHash` is behind the latest repository commit, the watcher will redeploy it
-- It uses Portainer's current `ConfigHash` as the source of truth, not only the local state file
+- It uses Portainer's current `ConfigHash` as the source of truth
+- It forwards each stack's current `Env` array back to Portainer during `git/redeploy`
 - If you need a safer observation-only bootstrap, set `SKIP_INITIAL_REDEPLOY=true`
 
 ## Notes

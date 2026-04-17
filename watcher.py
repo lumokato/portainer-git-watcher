@@ -1,20 +1,13 @@
 from __future__ import annotations
-
-import json
 import logging
 import os
 import re
 import sys
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import requests
-
-
-DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
-STATE_FILE = DATA_DIR / "state.json"
 
 
 def setup_logging() -> None:
@@ -107,8 +100,15 @@ class PortainerClient:
         response.raise_for_status()
         return response.json()
 
-    def redeploy_stack(self, stack_id: int, endpoint_id: int, pull_image: bool, prune: bool) -> dict[str, Any]:
-        payload = {"pullImage": pull_image, "prune": prune}
+    def redeploy_stack(
+        self,
+        stack_id: int,
+        endpoint_id: int,
+        pull_image: bool,
+        prune: bool,
+        env: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        payload = {"pullImage": pull_image, "prune": prune, "Env": env}
         response = self.session.put(
             f"{self.base_url}/api/stacks/{stack_id}/git/redeploy",
             params={"endpointId": endpoint_id},
@@ -156,20 +156,6 @@ class GithubClient:
         return payload["sha"]
 
 
-def load_state() -> dict[str, Any]:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    if not STATE_FILE.exists():
-        return {"stacks": {}}
-    with STATE_FILE.open("r", encoding="utf-8") as fh:
-        return json.load(fh)
-
-
-def save_state(state: dict[str, Any]) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with STATE_FILE.open("w", encoding="utf-8") as fh:
-        json.dump(state, fh, ensure_ascii=False, indent=2, sort_keys=True)
-
-
 def normalize_branch(git_config: dict[str, Any]) -> str:
     branch = git_config.get("ReferenceName") or git_config.get("referenceName") or "refs/heads/main"
     if branch.startswith("refs/heads/"):
@@ -210,29 +196,32 @@ def stack_repo_url(stack: dict[str, Any]) -> str:
     return git_config.get("URL") or git_config.get("Url") or ""
 
 
-def stack_key(stack: dict[str, Any]) -> str:
-    return str(stack["Id"])
-
-
 def stack_config_hash(stack: dict[str, Any]) -> str:
     git_config = stack["GitConfig"]
     return git_config.get("ConfigHash") or git_config.get("configHash") or ""
 
 
-def process_once(settings: Settings, portainer: PortainerClient, github: GithubClient, state: dict[str, Any]) -> bool:
+def stack_env(stack: dict[str, Any]) -> list[dict[str, Any]]:
+    env = stack.get("Env")
+    if isinstance(env, list):
+        return [
+            {"name": item.get("name", ""), "value": item.get("value", "")}
+            for item in env
+            if isinstance(item, dict) and item.get("name")
+        ]
+    return []
+
+
+def process_once(settings: Settings, portainer: PortainerClient, github: GithubClient) -> None:
     stacks = portainer.get_stacks()
     watched = [stack for stack in stacks if should_watch_stack(stack, settings)]
     logging.info("Discovered %s Git stacks, watching %s", len([s for s in stacks if is_git_stack(s)]), len(watched))
-
-    changed = False
-    stacks_state = state.setdefault("stacks", {})
 
     for stack in watched:
         name = stack["Name"]
         endpoint_id = int(stack["EndpointId"])
         branch = normalize_branch(stack["GitConfig"])
         repo_url = stack_repo_url(stack)
-        key = stack_key(stack)
 
         try:
             latest_sha = github.latest_commit_sha(repo_url, branch)
@@ -241,30 +230,13 @@ def process_once(settings: Settings, portainer: PortainerClient, github: GithubC
             continue
 
         current_config_hash = stack_config_hash(stack)
-        previous = stacks_state.get(key, {})
 
         if current_config_hash == latest_sha:
             logging.debug("Stack %s already converged (%s)", name, latest_sha[:7])
-            stacks_state[key] = {
-                "name": name,
-                "repo_url": repo_url,
-                "branch": branch,
-                "last_sha": latest_sha,
-                "last_seen_config_hash": current_config_hash,
-            }
-            changed = True
             continue
 
-        if not current_config_hash and previous.get("last_sha") is None and settings.skip_initial_redeploy:
+        if not current_config_hash and settings.skip_initial_redeploy:
             logging.info("Initial observation for stack %s -> %s, recording without redeploy", name, latest_sha[:7])
-            stacks_state[key] = {
-                "name": name,
-                "repo_url": repo_url,
-                "branch": branch,
-                "last_sha": latest_sha,
-                "last_seen_config_hash": current_config_hash,
-            }
-            changed = True
             continue
 
         logging.info(
@@ -279,28 +251,11 @@ def process_once(settings: Settings, portainer: PortainerClient, github: GithubC
                 endpoint_id=endpoint_id,
                 pull_image=settings.pull_image,
                 prune=settings.prune,
+                env=stack_env(stack),
             )
             logging.info("Redeploy triggered for stack %s: %s", name, result if result else "ok")
-            stacks_state[key] = {
-                "name": name,
-                "repo_url": repo_url,
-                "branch": branch,
-                "last_sha": latest_sha,
-                "last_seen_config_hash": latest_sha,
-            }
-            changed = True
         except Exception as exc:  # noqa: BLE001
-            stacks_state[key] = {
-                "name": name,
-                "repo_url": repo_url,
-                "branch": branch,
-                "last_sha": latest_sha,
-                "last_seen_config_hash": current_config_hash,
-            }
-            changed = True
             logging.exception("Failed to redeploy stack %s: %s", name, exc)
-
-    return changed
 
 
 def main() -> int:
@@ -313,15 +268,12 @@ def main() -> int:
 
     portainer = PortainerClient(settings)
     github = GithubClient(settings)
-    state = load_state()
 
     logging.info("Watcher started, polling every %s seconds", settings.poll_interval_seconds)
 
     while True:
         try:
-            changed = process_once(settings, portainer, github, state)
-            if changed:
-                save_state(state)
+            process_once(settings, portainer, github)
         except Exception as exc:  # noqa: BLE001
             logging.exception("Watcher loop failed: %s", exc)
         time.sleep(settings.poll_interval_seconds)

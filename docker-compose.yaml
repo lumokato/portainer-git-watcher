@@ -17,13 +17,6 @@ services:
       GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-180}
       SKIP_INITIAL_REDEPLOY: ${SKIP_INITIAL_REDEPLOY:-false}
-      REDEPLOY_PULL_IMAGE: ${REDEPLOY_PULL_IMAGE:-true}
+      REDEPLOY_PULL_IMAGE: ${REDEPLOY_PULL_IMAGE:-false}
       REDEPLOY_PRUNE: ${REDEPLOY_PRUNE:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      DATA_DIR: /app/data
-    volumes:
-      - watcher_state:/app/data
-
-volumes:
-  watcher_state:
-    driver: local
