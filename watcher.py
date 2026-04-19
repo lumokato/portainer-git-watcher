@@ -76,12 +76,27 @@ class Settings:
             exclude_stacks=env_list("STACK_EXCLUDE"),
             include_branches=env_list("BRANCH_INCLUDE"),
             skip_initial_redeploy=env_bool("SKIP_INITIAL_REDEPLOY", False),
-            pull_image=env_bool("REDEPLOY_PULL_IMAGE", True),
+            pull_image=env_bool("REDEPLOY_PULL_IMAGE", False),
             prune=env_bool("REDEPLOY_PRUNE", False),
             github_token=os.environ.get("GITHUB_TOKEN") or None,
             github_api_url=os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/"),
             self_stack_names=env_list("SELF_STACK_NAMES") or ["app-portainer-git-watcher"],
         )
+
+
+def summarize_response(response: requests.Response) -> str:
+    parts = [f"HTTP {response.status_code}"]
+    request_id = response.headers.get("X-Request-Id") or response.headers.get("X-PortainerAgent-Target")
+    if request_id:
+        parts.append(f"request-id={request_id}")
+
+    body = response.text.strip()
+    if body:
+        if len(body) > 800:
+            body = f"{body[:800]}...(truncated)"
+        parts.append(f"body={body}")
+
+    return ", ".join(parts)
 
 
 class PortainerClient:
@@ -109,13 +124,29 @@ class PortainerClient:
         env: list[dict[str, Any]],
     ) -> dict[str, Any]:
         payload = {"pullImage": pull_image, "prune": prune, "Env": env}
+        logging.debug(
+            "Redeploy request for stack %s on endpoint %s: pullImage=%s prune=%s env=%s",
+            stack_id,
+            endpoint_id,
+            pull_image,
+            prune,
+            len(env),
+        )
         response = self.session.put(
             f"{self.base_url}/api/stacks/{stack_id}/git/redeploy",
             params={"endpointId": endpoint_id},
             json=payload,
             timeout=60,
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            detail = summarize_response(response)
+            raise requests.HTTPError(
+                f"{exc}. Portainer response: {detail}",
+                response=response,
+                request=exc.request,
+            ) from exc
         if not response.content:
             return {}
         return response.json()
@@ -255,6 +286,14 @@ def process_once(settings: Settings, portainer: PortainerClient, github: GithubC
             )
             logging.info("Redeploy triggered for stack %s: %s", name, result if result else "ok")
         except Exception as exc:  # noqa: BLE001
+            if isinstance(exc, requests.HTTPError) and exc.response is not None:
+                logging.error(
+                    "Redeploy API failure for stack %s (id=%s endpoint=%s): %s",
+                    name,
+                    stack["Id"],
+                    endpoint_id,
+                    summarize_response(exc.response),
+                )
             logging.exception("Failed to redeploy stack %s: %s", name, exc)
 
 

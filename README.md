@@ -55,6 +55,8 @@ Behavior:
   If `true`, the first observed commit is recorded without redeploying.
   Default is `false`, so the watcher will correct Git stacks to the latest commit on first discovery.
 - `REDEPLOY_PULL_IMAGE`
+  Defaults to `false` for safety. Enable it only for image-based stacks that should explicitly
+  pull from a registry before redeploy.
 - `REDEPLOY_PRUNE`
 - `LOG_LEVEL`
 
